@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -58,6 +63,29 @@ func GenerateTokens(sub string) (string, string, string, error) {
 	}
 
 	return accessTokenStr, refreshTokenStr, string(refreshTokenHash), nil
+}
+
+func ConnectToDB() (*mongo.Client, error) {
+	// Установите таймаут подключения в 10 секунд
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Создайте подключение к базе данных MongoDB
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
+	// Проверьте подключение к базе данных
+	err = client.Ping(ctx, nil)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
+	log.Println("Connected to MongoDB!")
+	return client, nil
 }
 
 func main() {
