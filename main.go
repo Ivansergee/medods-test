@@ -10,7 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
-	"go.mongodb.org/mongo-driver/bson"
+	// "go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
@@ -39,30 +39,33 @@ var jwtSecretKey = []byte("secret-key")
 
 var users = map[string]User{}
 
-func GenerateTokens(sub string) (string, string, string, error) {
+func GenAccess(sub string) (string, error) {
 	payload := jwt.MapClaims{
 		"sub": sub,
 		"exp": time.Now().Add(time.Minute * 15).Unix(),
 	}
-
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS512, payload)
 	accessTokenStr, err := accessToken.SignedString(jwtSecretKey)
-
 	if err != nil {
-		return "", "", "", errors.New("jwt error")
+		return "", errors.New("jwt error")
 	}
 
+	return accessTokenStr, nil
+}
+
+func GenRefresh() (string, string, error) {
 	refreshToken := make([]byte, 32)
 	if _, err := rand.Read(refreshToken); err != nil {
-		return "", "", "", errors.New("rand error")
+		return "", "", errors.New("rand error")
 	}
+
 	refreshTokenStr := base64.StdEncoding.EncodeToString(refreshToken)
 	refreshTokenHash, err := bcrypt.GenerateFromPassword([]byte(refreshTokenStr), bcrypt.DefaultCost)
 	if err != nil {
-		return "", "", "", errors.New("bcrypt error")
+		return "", "", errors.New("bcrypt error")
 	}
 
-	return accessTokenStr, refreshTokenStr, string(refreshTokenHash), nil
+	return refreshTokenStr, string(refreshTokenHash), nil
 }
 
 func ConnectToDB() (*mongo.Client, error) {
@@ -71,7 +74,7 @@ func ConnectToDB() (*mongo.Client, error) {
 	defer cancel()
 
 	// Создайте подключение к базе данных MongoDB
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://192.168.35.35:27017/"))
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
@@ -89,7 +92,7 @@ func ConnectToDB() (*mongo.Client, error) {
 }
 
 func main() {
-	users["foobar"] = User{ID: "foobar"}
+	client := ConnectToDB()
 
 	app := fiber.New()
 	app.Post("/token", func(c *fiber.Ctx) error {
@@ -104,7 +107,12 @@ func main() {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "invalid credentials"})
 		}
 
-		accessToken, refreshToken, refreshTokenHash, err := GenerateTokens(user.ID)
+		accessToken, err := GenAccess(user.ID)
+		if err != nil {
+			return c.SendStatus(fiber.StatusInternalServerError)
+		}
+
+		refreshToken, refreshTokenHash, err := GenRefresh()
 		if err != nil {
 			return c.SendStatus(fiber.StatusInternalServerError)
 		}
@@ -121,6 +129,7 @@ func main() {
 
 		return c.JSON(res)
 	})
+
 	app.Post("/token/refresh", func(c *fiber.Ctx) error {
 		req := RefreshTokenReq{}
 		err := c.BodyParser(&req)
@@ -138,7 +147,12 @@ func main() {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "invalid token"})
 		}
 
-		accessToken, refreshToken, refreshTokenHash, err := GenerateTokens(user.ID)
+		accessToken, err := GenAccess(user.ID)
+		if err != nil {
+			return c.SendStatus(fiber.StatusInternalServerError)
+		}
+
+		refreshToken, refreshTokenHash, err := GenRefresh()
 		if err != nil {
 			return c.SendStatus(fiber.StatusInternalServerError)
 		}
