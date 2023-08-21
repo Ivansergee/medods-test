@@ -6,19 +6,21 @@ import (
 	"encoding/base64"
 	"errors"
 	"log"
+	"os"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
-	// "go.mongodb.org/mongo-driver/bson"
+	"github.com/joho/godotenv"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type User struct {
-	ID               string
-	RefreshTokenHash string
+	ID               string `bson:"guid"`
+	RefreshTokenHash string `bson:"refresh_token_hash"`
 }
 
 type TokenReq struct {
@@ -35,9 +37,7 @@ type RefreshTokenReq struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-var jwtSecretKey = []byte("secret-key")
-
-var users = map[string]User{}
+var jwtSecretKey = []byte(os.Getenv("SECRET_KEY"))
 
 func GenAccess(sub string) (string, error) {
 	payload := jwt.MapClaims{
@@ -68,31 +68,30 @@ func GenRefresh() (string, string, error) {
 	return refreshTokenStr, string(refreshTokenHash), nil
 }
 
-func ConnectToDB() (*mongo.Client, error) {
-	// Установите таймаут подключения в 10 секунд
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// Создайте подключение к базе данных MongoDB
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://192.168.35.35:27017/"))
-	if err != nil {
-		log.Fatal(err)
-		return nil, err
-	}
-
-	// Проверьте подключение к базе данных
-	err = client.Ping(ctx, nil)
-	if err != nil {
-		log.Fatal(err)
-		return nil, err
-	}
-
-	log.Println("Connected to MongoDB!")
-	return client, nil
-}
-
 func main() {
-	client := ConnectToDB()
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	clientOptions := options.Client().ApplyURI(os.Getenv("DB_URI"))
+	client, err := mongo.Connect(context.Background(), clientOptions)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = client.Ping(context.Background(), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	collection := client.Database(os.Getenv("DB_NAME")).Collection(os.Getenv("DB_COLLECTION"))
+
+	defer func() {
+		if err = client.Disconnect(context.Background()); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	app := fiber.New()
 	app.Post("/token", func(c *fiber.Ctx) error {
@@ -102,8 +101,11 @@ func main() {
 			return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{"message": "invalid json"})
 		}
 
-		user, ok := users[req.ID]
-		if !ok {
+		var user User
+
+		filter := bson.D{{"guid", req.ID}}
+		err = collection.FindOne(context.Background(), filter).Decode(&user)
+		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "invalid credentials"})
 		}
 
@@ -117,11 +119,12 @@ func main() {
 			return c.SendStatus(fiber.StatusInternalServerError)
 		}
 
-		user = User{
-			ID:               user.ID,
-			RefreshTokenHash: refreshTokenHash,
+		update := bson.M{"$set": bson.M{"refresh_token_hash": refreshTokenHash}}
+		_, err = collection.UpdateOne(context.Background(), filter, update)
+		if err != nil {
+			return c.SendStatus(fiber.StatusInternalServerError)
 		}
-		users[user.ID] = user
+
 		res := TokenResp{
 			AccessToken:  accessToken,
 			RefreshToken: refreshToken,
@@ -137,8 +140,11 @@ func main() {
 			return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{"message": "invalid json"})
 		}
 
-		user, ok := users[req.ID]
-		if !ok {
+		var user User
+
+		filter := bson.D{{"guid", req.ID}}
+		err = collection.FindOne(context.Background(), filter).Decode(&user)
+		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "invalid credentials"})
 		}
 
@@ -157,8 +163,11 @@ func main() {
 			return c.SendStatus(fiber.StatusInternalServerError)
 		}
 
-		user.RefreshTokenHash = refreshTokenHash
-		users[req.ID] = user
+		update := bson.M{"$set": bson.M{"refresh_token_hash": refreshTokenHash}}
+		_, err = collection.UpdateOne(context.Background(), filter, update)
+		if err != nil {
+			return c.SendStatus(fiber.StatusInternalServerError)
+		}
 
 		res := TokenResp{
 			AccessToken:  accessToken,

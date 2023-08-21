@@ -5,6 +5,7 @@ go 1.21.0
 require (
 	github.com/gofiber/fiber/v2 v2.48.0
 	github.com/golang-jwt/jwt/v4 v4.5.0
+	github.com/joho/godotenv v1.5.1
 	go.mongodb.org/mongo-driver v1.12.1
 	golang.org/x/crypto v0.7.0
 )

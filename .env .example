@@ -1,0 +1,4 @@
+SECRET_KEY=SECRETKEY
+DB_URI=mongodb://localhost:27017
+DB_NAME=test
+DB_COLLECTION=users
