@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"github.com/Ivansergee/medods-test/database"
-	"github.com/Ivansergee/medods-test/utils"
+	"github.com/Ivansergee/medods-test/tokens"
 	"github.com/gofiber/fiber/v2"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -33,12 +33,12 @@ func TokenHandler(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "invalid credentials"})
 	}
 
-	accessToken, err := utils.GenAccess(user.ID)
+	accessToken, err := tokens.GenAccess(user.ID)
 	if err != nil {
 		return c.SendStatus(fiber.StatusInternalServerError)
 	}
 
-	refreshToken, refreshTokenHash, err := utils.GenRefresh()
+	refreshToken, refreshTokenHash, err := tokens.GenRefresh()
 	if err != nil {
 		return c.SendStatus(fiber.StatusInternalServerError)
 	}
@@ -73,12 +73,12 @@ func RefreshTokenHandler(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "invalid token"})
 	}
 
-	accessToken, err := utils.GenAccess(user.ID)
+	accessToken, err := tokens.GenAccess(user.ID)
 	if err != nil {
 		return c.SendStatus(fiber.StatusInternalServerError)
 	}
 
-	refreshToken, refreshTokenHash, err := utils.GenRefresh()
+	refreshToken, refreshTokenHash, err := tokens.GenRefresh()
 	if err != nil {
 		return c.SendStatus(fiber.StatusInternalServerError)
 	}
